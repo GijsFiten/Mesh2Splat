@@ -518,27 +518,43 @@ void SceneManager::exportPly(const std::string outputFile, unsigned int exportFo
 {
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, renderContext.gaussianBuffer);
 
-    std::vector<utils::GaussianDataSSBO> cpuData(renderContext.numberOfGaussians);
-
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    
+
+    // Query allocated buffer size and clamp readback to avoid GL_INVALID_VALUE
+    GLint buffSize = 0;
+    glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &buffSize);
+    size_t maxGaussians = 0;
+    if (buffSize > 0) {
+        maxGaussians = static_cast<size_t>(buffSize) / sizeof(utils::GaussianDataSSBO);
+    }
+
+    if (renderContext.numberOfGaussians == 0 || maxGaussians == 0) {
+        std::cerr << "[exportPly] gaussianBuffer=" << renderContext.gaussianBuffer << " bufferSize=" << buffSize << " numGaussians=" << renderContext.numberOfGaussians << " glError=" << glGetError() << std::endl;
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        return;
+    }
+
+    size_t readCount = static_cast<size_t>(renderContext.numberOfGaussians);
+    if (readCount > maxGaussians) {
+        std::cerr << "[exportPly] WARNING: GPU reported " << renderContext.numberOfGaussians << " gaussians but SSBO only holds " << maxGaussians << "; truncating readback to " << maxGaussians << std::endl;
+        readCount = maxGaussians;
+    }
+
+    std::vector<utils::GaussianDataSSBO> cpuData(readCount);
+
     glGetBufferSubData(
         GL_SHADER_STORAGE_BUFFER,
         0,
-        renderContext.numberOfGaussians * sizeof(utils::GaussianDataSSBO),
+        static_cast<GLsizeiptr>(readCount * sizeof(utils::GaussianDataSSBO)),
         cpuData.data()
     );
-    // Diagnostic: print buffer size and a few entries to help debug zeroed exports
-    {
-        GLint buffSize = 0;
-        glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &buffSize);
-        GLenum err = glGetError();
-        std::cerr << "[exportPly] gaussianBuffer=" << renderContext.gaussianBuffer << " bufferSize=" << buffSize << " numGaussians=" << renderContext.numberOfGaussians << " glError=" << err << std::endl;
-        int inspect = std::min<long>(5, static_cast<long>(renderContext.numberOfGaussians));
-        for (int i = 0; i < inspect; ++i) {
-            auto &g = cpuData[i];
-            std::cerr << "[exportPly] cpuData[" << i << "] pos=(" << g.position.x << "," << g.position.y << "," << g.position.z << ") color=(" << g.color.r << "," << g.color.g << "," << g.color.b << "," << g.color.a << ")" << std::endl;
-        }
+
+    GLenum err = glGetError();
+    std::cerr << "[exportPly] gaussianBuffer=" << renderContext.gaussianBuffer << " bufferSize=" << buffSize << " numGaussians=" << renderContext.numberOfGaussians << " readCount=" << readCount << " glError=" << err << std::endl;
+    int inspect = std::min<long>(5, static_cast<long>(readCount));
+    for (int i = 0; i < inspect; ++i) {
+        auto &g = cpuData[i];
+        std::cerr << "[exportPly] cpuData[" << i << "] pos=(" << g.position.x << "," << g.position.y << "," << g.position.z << ") color=(" << g.color.r << "," << g.color.g << "," << g.color.b << "," << g.color.a << ")" << std::endl;
     }
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
@@ -559,33 +575,49 @@ void SceneManager::exportPlySynchronous(const std::string outputFile, unsigned i
 {
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, renderContext.gaussianBuffer);
 
-    std::vector<utils::GaussianDataSSBO> cpuData(renderContext.numberOfGaussians);
-
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    
+
+    // Query allocated buffer size and clamp readback to avoid GL_INVALID_VALUE
+    GLint buffSize = 0;
+    glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &buffSize);
+    size_t maxGaussians = 0;
+    if (buffSize > 0) {
+        maxGaussians = static_cast<size_t>(buffSize) / sizeof(utils::GaussianDataSSBO);
+    }
+
+    if (renderContext.numberOfGaussians == 0 || maxGaussians == 0) {
+        std::cerr << "[exportPlySynchronous] gaussianBuffer=" << renderContext.gaussianBuffer << " bufferSize=" << buffSize << " numGaussians=" << renderContext.numberOfGaussians << " glError=" << glGetError() << std::endl;
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+        return;
+    }
+
+    size_t readCount = static_cast<size_t>(renderContext.numberOfGaussians);
+    if (readCount > maxGaussians) {
+        std::cerr << "[exportPlySynchronous] WARNING: GPU reported " << renderContext.numberOfGaussians << " gaussians but SSBO only holds " << maxGaussians << "; truncating readback to " << maxGaussians << std::endl;
+        readCount = maxGaussians;
+    }
+
+    std::vector<utils::GaussianDataSSBO> cpuData(readCount);
+
     glGetBufferSubData(
         GL_SHADER_STORAGE_BUFFER,
         0,
-        renderContext.numberOfGaussians * sizeof(utils::GaussianDataSSBO),
+        static_cast<GLsizeiptr>(readCount * sizeof(utils::GaussianDataSSBO)),
         cpuData.data()
     );
-    // Diagnostic: print buffer size and a few entries to help debug zeroed exports
-    {
-        GLint buffSize = 0;
-        glGetBufferParameteriv(GL_SHADER_STORAGE_BUFFER, GL_BUFFER_SIZE, &buffSize);
-        GLenum err = glGetError();
-        std::cerr << "[exportPlySynchronous] gaussianBuffer=" << renderContext.gaussianBuffer << " bufferSize=" << buffSize << " numGaussians=" << renderContext.numberOfGaussians << " glError=" << err << std::endl;
-        int inspect = std::min<long>(5, static_cast<long>(renderContext.numberOfGaussians));
-        for (int i = 0; i < inspect; ++i) {
-            auto &g = cpuData[i];
-            std::cerr << "[exportPlySynchronous] cpuData[" << i << "] pos=(" << g.position.x << "," << g.position.y << "," << g.position.z << ") color=(" << g.color.r << "," << g.color.g << "," << g.color.b << "," << g.color.a << ")" << std::endl;
-        }
+
+    GLenum err = glGetError();
+    std::cerr << "[exportPlySynchronous] gaussianBuffer=" << renderContext.gaussianBuffer << " bufferSize=" << buffSize << " numGaussians=" << renderContext.numberOfGaussians << " readCount=" << readCount << " glError=" << err << std::endl;
+    int inspect = std::min<long>(5, static_cast<long>(readCount));
+    for (int i = 0; i < inspect; ++i) {
+        auto &g = cpuData[i];
+        std::cerr << "[exportPlySynchronous] cpuData[" << i << "] pos=(" << g.position.x << "," << g.position.y << "," << g.position.z << ") color=(" << g.color.r << "," << g.color.g << "," << g.color.b << "," << g.color.a << ")" << std::endl;
     }
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-    
+
     float scaleMultiplier = renderContext.gaussianStd / static_cast<float>(renderContext.resolutionTarget);
-    
+
     // Call savePlyVector directly instead of in a detached thread
     parsers::savePlyVector(outputFile, cpuData, exportFormat, scaleMultiplier);
 }
